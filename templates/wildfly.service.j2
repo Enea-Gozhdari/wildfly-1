@@ -1,0 +1,15 @@
+[Unit]
+Description=The WildFly Application Server
+After=syslog.target network.target
+
+[Service]
+Environment=LAUNCH_JBOSS_IN_BACKGROUND=1
+EnvironmentFile={{ wildfly_bin }}/wildfly.conf
+User=ebet
+LimitNOFILE=102642
+PIDFile=/var/run/wildfly/wildfly.pid
+ExecStart={{ wildfly_bin }}/launch.sh
+StandardOutput=null
+
+[Install]
+WantedBy=multi-user.target
