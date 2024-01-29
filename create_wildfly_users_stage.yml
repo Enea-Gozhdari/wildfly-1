@@ -1,0 +1,37 @@
+- name: Create WildFly users for stage environment
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Create WildFly domainadmin_stage user
+      community.general.wildfly_user:
+        name: domainadmin_stage
+        password: "{{ vault.domainadmin_stage }}"
+        role: SuperUser
+        groups: SuperUser
+        realm: ManagementRealm
+        server_group: main-server-group
+        state: present
+      when: target_env == "stage" and wildfly_mode == "domain"
+
+    - name: Create WildFly domainstage_stage user
+      community.general.wildfly_user:
+        name: domainstage_stage
+        password: "{{ vault.domainstage_stage }}"
+        role: SuperUser
+        groups: SuperUser
+        realm: ManagementRealm
+        server_group: main-server-group
+        state: present
+      when: target_env == "stage" and wildfly_mode == "domain"
+
+    - name: Create WildFly jboss_stage user
+      community.general.wildfly_user:
+        name: jboss_stage
+        password: "{{ vault.jboss_stage }}"
+        role: SuperUser
+        groups: SuperUser
+        realm: ManagementRealm
+        server_group: main-server-group
+        state: present
+      when: target_env == "stage" and wildfly_mode == "domain"
+

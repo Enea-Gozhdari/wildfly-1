@@ -1,0 +1,37 @@
+- name: Create WildFly users for prod environment
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Create WildFly domainadmin_prod user
+      community.general.wildfly_user:
+        name: domainadmin_prod
+        password: "{{ vault.domainadmin_prod }}"
+        role: SuperUser
+        groups: SuperUser
+        realm: ManagementRealm
+        server_group: main-server-group
+        state: present
+      when: target_env == "prod" and wildfly_mode == "domain"
+
+    - name: Create WildFly domainprod_prod user
+      community.general.wildfly_user:
+        name: domainprod_prod
+        password: "{{ vault.domainprod_prod }}"
+        role: SuperUser
+        groups: SuperUser
+        realm: ManagementRealm
+        server_group: main-server-group
+        state: present
+      when: target_env == "prod" and wildfly_mode == "domain"
+
+    - name: Create WildFly jboss_prod user
+      community.general.wildfly_user:
+        name: jboss_prod
+        password: "{{ vault.jboss_prod }}"
+        role: SuperUser
+        groups: SuperUser
+        realm: ManagementRealm
+        server_group: main-server-group
+        state: present
+      when: target_env == "prod" and wildfly_mode == "domain"
+

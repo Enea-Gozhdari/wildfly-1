@@ -1,0 +1,24 @@
+---
+username: osboxes
+wildfly_download_url: "https://github.com/wildfly/wildfly/releases/download/30.0.1.Final/wildfly-30.0.1.Final.zip"
+wildfly_version: "30.0.1.Final"
+wildfly_mode: "domain"
+domainadmin_test_pwd: "osboxes.org"
+target_env: "test"
+wildfly_bin: "/opt/wildfly/bin"
+wildfly_java_opts: "-Xms512m -Xmx1024m"
+wildfly_log_dir: "/opt/wildfly/standalone/log"
+java_version: "11"
+CLUSTER_NAME: cluster-info-sito-ha
+
+wildfly_users:
+  test:
+    - { username: "test_user1", password: "{{ vault.test_user1_password }}" }
+    - { username: "test_user2", password: "{{ vault.test_user2_password }}" }
+  stage:
+    - { username: "stage_user1", password: "{{ vault.stage_user1_password }}" }
+    - { username: "stage_user2", password: "{{ vault.stage_user2_password }}" }
+  prod:
+    - { username: "prod_user1", password: "{{ vault.prod_user1_password }}" }
+    - { username: "prod_user2", password: "{{ vault.prod_user2_password }}" }
+

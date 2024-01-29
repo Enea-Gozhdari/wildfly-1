@@ -1,0 +1,20 @@
+---
+- name: Create WildFly users for different environments
+  hosts: localhost
+  gather_facts: false
+  vars_files:
+    - vars.yml
+    - vault.yml
+
+  tasks:
+    - name: Load vault file
+      include_vars:
+        file: vault.yml
+
+    - name: Create WildFly users
+      debug:
+        msg: |
+          Creating users:
+          - Username: test_user1, Password: {{ domainadmin_test }}
+          - Username: test_user2, Password: {{ domaintest_test }}
+      when: wildfly_mode == "domain" and target_env == "test"

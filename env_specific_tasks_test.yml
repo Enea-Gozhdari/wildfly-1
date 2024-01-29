@@ -1,0 +1,12 @@
+- name: Print WildFly Mode and Version
+  debug:
+    msg: |
+      {% if target_env == "test" %}
+      Test Environment - WildFly Mode: {{ wildfly_mode }}, Version: {{ wildfly_version }}
+      {% elif target_env == "stage" %}
+      Stage Environment - WildFly Mode: {{ wildfly_mode }}, Version: {{ wildfly_version }}
+      {% elif target_env == "prod" %}
+      Production Environment - WildFly Mode: {{ wildfly_mode }}, Version: {{ wildfly_version }}
+      {% else %}
+      Unknown Environment
+      {% endif %}

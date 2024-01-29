@@ -1,0 +1,16 @@
+---
+- name: Create WildFly users for test environment
+  hosts: all
+  gather_facts: false
+  vars_files:
+    - vars.yml  # Include vars file
+    - vault.yml
+  tasks:
+    - name: Create WildFly users
+      debug:
+        msg: "Creating user {{ item.username }} with password {{ item.password }}"
+      loop: "{{ wildfly_users[target_env] }}"
+      loop_control:
+        loop_var: item
+      when: wildfly_mode == "domain" and target_env == "test"
+

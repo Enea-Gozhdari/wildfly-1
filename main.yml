@@ -1,0 +1,279 @@
+---
+- hosts: all
+  gather_facts: true
+  vars_files:
+   - vars.yml
+   - vault.yml
+  become: yes
+  become_user: root
+  become_method: sudo
+  tasks:
+    - name: "Install the required rpms"
+      yum: 
+        name: "java-11-openjdk.x86_64,net-tools,telnet,telnet-server,curl,bind-utils,python3-pip,ansible" 
+        state: latest
+
+    - name: "Stat path of java"
+      stat:
+        path: /etc/alternatives/jre_openjdk
+      register: java_path
+
+
+    - name: "Create symbolic link to java"
+      file:
+        src: '{{ java_path.stat.lnk_target }}'
+        dest: "/opt/java"
+        state: link
+        force: yes
+    - name: Ensure .bash_profile exists for osboxes user
+      file:
+          path: "/home/osboxes/.bash_profile"
+          state: touch
+          owner: osboxes
+          group: osboxes
+          mode: "0644"
+
+    - name: "Configure bash_profile of {{ username }} user"
+      lineinfile: 
+        path: "/home/{{ username }}/.bash_profile"
+        line: "{{ item }}"
+      loop:
+        - "JAVA_HOME=/opt/java"
+        - "export JAVA_HOME"
+        - "JBOSS_HOME=/opt/wildfly"
+        - "export JBOSS_HOME"
+        - "PATH=$JAVA_HOME/bin:$PATH:$HOME/bin"
+        - "export PATH"
+      become: yes
+      become_method: sudo
+      become_user: "{{ username }}"
+
+    - name: Install community.general collection for osboxes user
+      ansible.builtin.shell: |
+        ansible-galaxy collection install community.general
+      args:
+        executable: /bin/bash
+        chdir: "/home/osboxes"
+      become: true
+      become_user: osboxes
+
+
+    - name: "Download WildFly distribution"
+      get_url:
+        url: "{{ wildfly_download_url }}"
+        dest: "/tmp/wildfly.zip"
+        timeout: 600
+      become: yes
+      become_method: sudo
+      become_user: root
+
+    - name: Install required Ansible collections
+      ansible.builtin.shell:
+        cmd: |
+         ansible-galaxy collection install community.general
+         ansible-galaxy collection install middleware_automation.wildfly
+
+    - name: "Extract WildFly distribution"
+      unarchive:
+        src: "/tmp/wildfly.zip"
+        dest: "/opt"
+        remote_src: yes
+    
+    - name: Create a symlink for WildFly folder
+      file:
+        src: "/opt/wildfly-{{ wildfly_version }}"
+        dest: "/opt/wildfly"
+        state: link
+        force: yes
+
+    - name: Ensure /opt/wildfly/bin/wildfly.conf exists
+      file:
+          path: "/opt/wildfly/bin/wildfly.conf"
+          state: touch
+          owner: osboxes
+          group: osboxes
+          mode: "0755"
+
+    - name: "Set WildFly directory ownership"
+      file:
+        path: "/opt/wildfly"
+        state: directory
+        owner: "{{ username }}"
+        group: "{{ username }}"
+
+    - name: "Create WildFly standalone service"
+      template:
+        src: wildfly.service.j2
+        dest: "/etc/systemd/system/wildfly.service"
+
+    - name: "Reload systemd"
+      systemd:
+        daemon_reload: yes
+
+    - name: "Create WildFly SystemD service unit (Domain Mode)"
+      template:
+        src: wildfly.service.j2
+        dest: "/etc/systemd/system/wildfly.service"
+      when: wildfly_mode == "domain"
+      become: yes
+      become_method: sudo
+      become_user: root
+
+    - name: "Reload systemd after creating service unit"
+      systemd:
+        daemon_reload: yes
+      become: yes
+
+    - name: "Start and enable WildFly service"
+      service:
+        name: wildfly
+        state: started
+        enabled: yes
+
+    - name: "Gather JAVA_HOME and JBOSS_HOME facts"
+      debug:
+        var: item
+      with_items:
+        - ansible_facts['java_home']
+        - ansible_facts['jboss_home']
+
+    - name: "Gather JBOSS_USER fact"
+      debug:
+        var: ansible_user
+
+    - name: Update wildfly.conf with environment variables
+      blockinfile:
+        path: /opt/wildfly/bin/wildfly.conf
+        block: |
+          export JAVA_HOME=/opt/java
+          export JBOSS_HOME=/opt/wildfly
+          export JBOSS_USER=osboxes
+        marker: "# {mark} ANSIBLE MANAGED BLOCK -- DO NOT EDIT THIS SECTION"
+
+    - name: "Configure domain.xml for environment"
+      template:
+        src: templates/domain.xml.j2
+        dest: /opt/wildfly/domain/configuration/domain.xml
+      when: wildfly_mode == "domain"  
+
+    - name: "include all vars necessary"
+      include_vars: vars.yml
+
+    - name: "Version Check (Standalone Mode)"
+      command: "/opt/wildfly-{{ wildfly_version }}/bin/standalone.sh --version"
+      register: version_result_standalone
+      when: wildfly_mode == "standalone"
+      changed_when: false
+
+    - name: "Display WildFly Version (Standalone Mode)"
+      debug:
+        var: version_result_standalone.stdout_lines
+      when: wildfly_mode == "standalone"
+
+    - name: "Create user domainadmin in env:'Test' (Domain Mode)"
+      shell: 'cd /opt/wildfly/bin && ./add-user.sh -ds -u domainadmin -p osboxes.org -g SuperUser'
+      when: target_env == "test" and wildfly_mode == "domain"
+    
+#    - name: "Assign roles to users in Domain Mode"
+#      shell: '{{ wildfly_bin }}/jboss-cli.sh --controller={{ ansible_default_ipv4.address }}:9990 --connect --commands="your_role_assignment_commands"'
+#      when: wildfly_mode == "domain"
+#      become: yes
+    - name: Assign roles to users in Domain mode
+      include_tasks: create_wildfly_users.yml
+      when: wildfly_mode == "domain"
+
+
+    - name: "Configure domain.xml for Test environment"
+      template:
+        src: templates/domain.xml.j2
+        dest: /opt/wildfly/domain/configuration/domain.xml
+      when: target_env == "test" and wildfly_mode == "domain"
+
+    - name: "Environment-specific configurations"
+      include_tasks: "{{ 'env_specific_tasks_' + target_env + '.yml' }}"
+      when: target_env in ['test', 'stage', 'prod']
+
+    - name: "Version Check (Domain Mode)"
+      command: "/opt/wildfly-{{ wildfly_version }}/bin/domain.sh --version"
+      register: version_result_domain
+      when: wildfly_mode == "domain"
+      changed_when: false
+
+    - name: "Display WildFly Version (Domain Mode)"
+      debug:
+        var: version_result_domain.stdout_lines
+      when: wildfly_mode == "domain"
+
+#    - name: "Conditional Configuration Based on WildFly Version"
+#      include_tasks: "{{ item }}"
+#      with_first_found:
+#        - files:
+#            - "configure-wildfly-v{{ version_result_domain.stdout_lines[0] }}.yml"
+#            - "configure-wildfly-default.yml"
+#          skip: true
+#      when: wildfly_mode == "domain"
+
+    - name: "Configure standalone.xml for Test environment"
+      template:
+        src: templates/standalone.xml.j2
+        dest: /opt/wildfly/standalone/configuration/standalone.xml
+      when: target_env == "test" and wildfly_mode == "standalone"
+
+    - name: "Start WildFly (Standalone Mode)"
+      systemd:
+        name: wildfly
+        state: started
+        enabled: yes
+        daemon_reload: yes
+      when: target_env == "test" and wildfly_mode == "standalone"
+
+    - name: "Set Java heap memory in WildFly configuration"
+      lineinfile:
+        path: "/opt/wildfly/bin/standalone.conf"  # Update with the correct path if using domain mode
+        regexp: "^JAVA_OPTS="
+        line: "JAVA_OPTS=\"{{ wildfly_java_opts }}\""
+      when: wildfly_mode == "standalone"
+
+    - name: "Start WildFly ({{ wildfly_mode }} Mode)"
+      systemd:
+        name: wildfly
+        state: started
+        enabled: yes
+        daemon_reload: yes
+      when: wildfly_mode == "standalone" or (target_env == "test" and wildfly_mode == "standalone")
+   
+    - name: Create WildFly users for Test environment
+      include_tasks: create_wildfly_users.yml
+      vars:
+        users: "{{ wildfly_users.test }}"
+      when: target_env == "test" and wildfly_mode == "domain"
+
+    - name: Create WildFly users for Stage environment
+      include_tasks: create_wildfly_users.yml
+      vars:
+        users: "{{ wildfly_users.stage }}"
+      when: target_env == "stage" and wildfly_mode == "domain"
+
+    - name: Create WildFly users for Prod environment
+      include_tasks: create_wildfly_users.yml
+      vars:
+        users: "{{ wildfly_users.prod }}"
+      when: target_env == "prod" and wildfly_mode == "domain"
+    - name: Create symlink for WildFly log folder
+      file:
+        src: "{{ wildfly_log_dir }}"
+        dest: "/opt/logs/wf-{{ ansible_hostname }}"
+        state: link
+
+
+   
+    #- name: Deploy PROBE.war to WildFly instances
+    #  wildfly_deploy:
+    #    src: /opt/probe_war/PROBE.war
+    #    state: present
+    #    server_group: "{{ group_names[0] }}"
+    #    username: "{{ 'domainadmin_' + target_env }}"
+    #    password: "{{ vault['domainadmin_' + target_env + '_password'] }}"
+    #    host: "{{ ansible_host }}"
+    #    port: 9990
+    #    when: target_env in ['prod', 'stage', 'test']

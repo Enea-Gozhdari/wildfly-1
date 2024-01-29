@@ -1,0 +1,54 @@
+- hosts: all
+  gather_facts: true
+  vars_files:
+    - vars.yml
+    - vault.yml
+  become: yes
+  become_user: root
+  become_method: sudo
+  tasks:
+    - name: Stop WildFly Service
+      systemd:
+        name: wildfly
+        state: stopped
+        enabled: no
+        daemon_reload: yes
+
+    - name: Remove WildFly Installation Directory
+      file:
+        path: "/opt/wildfly-{{ wildfly_version }}"
+        state: absent
+
+    - name: Remove WildFly Standalone Service Unit
+      file:
+        path: "/etc/systemd/system/wildfly.service"
+        state: absent
+
+    - name: Remove WildFly Symbolic Link
+      file:
+        path: "/opt/wildfly"
+        state: absent
+
+    - name: Remove Java Symbolic Link
+      file:
+        path: "/opt/java"
+        state: absent
+
+    - name: Remove WildFly User Configuration
+      file:
+        path: "/home/{{ username }}/.bash_profile"
+        state: absent
+
+    - name: Get information about currently installed Java
+      command: "yum list installed 'java-*'"
+      register: installed_java_info
+      changed_when: false
+      failed_when: false
+
+    - debug:
+        var: installed_java_info
+
+    - name: Remove Java RPM and Dependencies
+      yum:
+        name: "java-{{ java_version }}-openjdk.x86_64"
+        state: absent
